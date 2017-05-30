@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/gjc13/googledrivefs/drive"
-	"github.com/gjc13/googledrivefs/utils"
+	"github.com/gjc13/gdfs/drive"
+	"github.com/gjc13/gdfs/utils"
 )
 
 func main() {

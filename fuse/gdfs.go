@@ -166,20 +166,21 @@ type File struct {
 	// file   *googledrive.File
 }
 
-const greeting = "hello, world\n"
+//const greeting = "hello, world\n"
 
 func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
 	// TODO: use getfilesize
 	// var err errord
-	fileSize, err := handler.GetFileSize(f.fileId)
+	file, err := handler.GetFile(f.fileId)
 	if err != nil {
 		log.Fatal(err)
 		return err
 	}
 	a.Inode = 0 // let it get dynamic id automatic
 	a.Mode = 0775
-	fmt.Println(fileSize)
-	a.Size = uint64(len(greeting))
+	a.Size = uint64(file.Size)
+	fmt.Println(file.Size)
+	//a.Size = uint64(len(greeting))
 	return nil
 }
 
@@ -195,6 +196,6 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	fmt.Println(len(content))
-	return []byte(greeting), nil
+	//return []byte(greeting), nil
 	return content, nil
 }

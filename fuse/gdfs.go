@@ -16,7 +16,24 @@ import (
 	"golang.org/x/net/context"
 )
 
+// Dir implements both Node and Handle for the root directory.
+type DirCont struct {
+	dirDirs    []fuse.Dirent
+	name2id    map[string]string // name->fileId+('0' for dir and '1' for file)
+	hasUpdated bool              // true -> newest
+}
+
+// type FileCont struct {
+// 	parentDirId 	string
+// 	content 		string
+
+// }
+
 var handler *drive.DriveHandler
+var id2container map[string]DirCont // fileId->dir container
+var id2parentdir map[string]string  // fileId->parentdir
+var id2content map[string][]byte    // fileId->content
+var id2name map[string]string
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -37,7 +54,10 @@ func main() {
 	mountpoint := flag.Arg(0)
 
 	// init global
-	id2container = make(map[string]Cont)
+	id2container = make(map[string]DirCont)
+	id2parentdir = make(map[string]string)
+	id2content = make(map[string][]byte)
+	id2name = make(map[string]string)
 
 	// connect gdfs
 	utils.SetupProxyFromEnv()
@@ -79,17 +99,6 @@ func (f FS) Root() (fs.Node, error) {
 	return f.rootDir, nil
 }
 
-var id2container map[string]Cont   // fileId->dir container
-var id2parentdir map[string]string // fileId->parentdir
-var id2content map[string][]byte   // fileId->content
-
-// Dir implements both Node and Handle for the root directory.
-type Cont struct {
-	dirDirs    []fuse.Dirent
-	name2id    map[string]string // name->fileId+('0' for dir and '1' for file)
-	hasUpdated bool              // true -> newest
-}
-
 type Dir struct {
 	fileId string
 }
@@ -124,8 +133,10 @@ func (d Dir) GetDirAll() {
 				Type:  ftype,
 				Name:  file.Name,
 			})
+			id2parentdir[file.Id] = d.fileId
+			id2name[file.Id] = file.Name
 		}
-		id2container[d.fileId] = Cont{
+		id2container[d.fileId] = DirCont{
 			dirDirs:    dirDirs,
 			name2id:    name2id,
 			hasUpdated: true,
@@ -182,6 +193,7 @@ func (d Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error)
 		Name:  name,
 	})
 	id2container[d.fileId] = tmp
+	id2parentdir[newDir.Id] = d.fileId
 	return Dir{
 		fileId: newDir.Id,
 	}, nil
@@ -204,6 +216,8 @@ func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	for i, dir := range tmp.dirDirs {
 		if dir.Name == name {
 			tmp.dirDirs = append(tmp.dirDirs[:i], tmp.dirDirs[i+1:]...)
+			delete(id2parentdir, id[:len(id)-1])
+			delete(id2name, id[:len(id)-1])
 			break
 		}
 	}
@@ -243,7 +257,10 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 		return fuse.ENOENT
 	}
 	// gd
-	handler.MoveFile(id, d.fileId, newDir.fileId)
+	err := handler.MoveFile(id[:len(id)-1], d.fileId, newDir.fileId)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if req.OldName != req.NewName {
 		handler.RenameFile(id, req.NewName)
 	}
@@ -265,13 +282,43 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 	tmp = id2container[newDir.fileId]
 	tmp.dirDirs = append(tmp.dirDirs, dirent)
 	id2container[newDir.fileId] = tmp
+	id2parentdir[id[:len(id)-1]] = newDir.fileId
+	id2name[id[:len(id)-1]] = req.NewName
 	return nil
 }
 
 func (d Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	if req.Name[0] == '.' {
+		return nil, nil, fuse.ENOENT
+	}
 	fmt.Println("Create")
 	d.GetDirAll()
-	return nil, nil, nil
+	_, ok := id2container[d.fileId].name2id[req.Name]
+	if ok {
+		return nil, nil, fuse.EEXIST
+	}
+	// gd
+	gf, err := handler.Touch(req.Name, d.fileId)
+	if err != nil {
+		log.Fatal(err)
+		return nil, nil, err
+	}
+	id := gf.Id
+	// local
+	id2container[d.fileId].name2id[req.Name] = id + "1"
+	tmp := id2container[d.fileId]
+	tmp.dirDirs = append(tmp.dirDirs, fuse.Dirent{
+		Inode: utils.Str2u64(id),
+		Type:  fuse.DT_File,
+		Name:  req.Name,
+	})
+	id2container[d.fileId] = tmp
+	f := File{
+		fileId: id,
+	}
+	id2parentdir[id] = d.fileId
+	id2name[id] = req.Name
+	return f, f, nil
 }
 
 // File implements both Node and Handle for the hello file.
@@ -279,7 +326,7 @@ type File struct {
 	fileId string
 }
 
-//const greeting = "hello, world\n"
+//const greeting = "hello, wordld\n"
 
 func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
 	fmt.Println("Attr")
@@ -313,6 +360,7 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	fmt.Println(len(content))
+	id2content[f.fileId] = content
 	//return []byte(greeting), nil
 	return content, nil
 }
@@ -321,15 +369,20 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 
 func (f File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 	fmt.Println("Write")
-	content, err := f.ReadAll(ctx)
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
+	content, _ := id2content[f.fileId]
 	newLen := req.Offset + int64(len(req.Data))
 	if newLen := int(newLen); newLen > len(content) {
 		content = append(content, make([]byte, newLen-len(content))...)
 	}
 	resp.Size = copy(content[req.Offset:], req.Data)
+	fmt.Println("Offset")
+	fmt.Println(req.Offset)
+	fmt.Println("Data")
+	fmt.Println(req.Data)
+	// gd
+	// err := handler.DeleteFile(f.fileId)
+	// id, err = handler.WriteToDir(id2name[f.fileId], bytes.NewReader(content), id2parentdir[f.fileId])
+	// local
+
 	return nil
 }

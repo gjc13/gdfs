@@ -37,7 +37,7 @@ func main() {
 	mountpoint := flag.Arg(0)
 
 	// init global
-	bigMap = make(map[string]Cont)
+	id2cont = make(map[string]Cont)
 
 	// connect gdfs
 	utils.SetupProxyFromEnv()
@@ -48,10 +48,10 @@ func main() {
 
 	c, err := fuse.Mount(
 		mountpoint,
-		fuse.FSName("helloworld"),
-		fuse.Subtype("hellofs"),
+		fuse.FSName("google drive"),
+		fuse.Subtype("gdfs"),
 		fuse.LocalVolume(),
-		fuse.VolumeName("Hello world!"),
+		fuse.VolumeName("Hello gdfs!"),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -79,7 +79,8 @@ func (f FS) Root() (fs.Node, error) {
 	return f.rootDir, nil
 }
 
-var bigMap map[string]Cont // fileId->dir container
+var id2cont map[string]Cont        // fileId->dir container
+var id2parentdir map[string]string // fileId->parentdir
 
 // Dir implements both Node and Handle for the root directory.
 type Cont struct {
@@ -90,14 +91,17 @@ type Cont struct {
 
 type Dir struct {
 	fileId string
-	// hasRead bool
-	// name    string
-	// cont *Cont
+}
+
+func (d Dir) Attr(ctx context.Context, a *fuse.Attr) error {
+	a.Inode = 0 // let it get dynamic id automatic
+	a.Mode = os.ModeDir | 0775
+	return nil
 }
 
 func (d Dir) GetDirAll() {
-	_, ok := bigMap[d.fileId]
-	if !ok || !bigMap[d.fileId].hasUpdated {
+	_, ok := id2cont[d.fileId]
+	if !ok || !id2cont[d.fileId].hasUpdated {
 		files, err := handler.List(d.fileId)
 		if err != nil {
 			log.Fatal(err)
@@ -119,7 +123,7 @@ func (d Dir) GetDirAll() {
 				Name:  file.Name,
 			})
 		}
-		bigMap[d.fileId] = Cont{
+		id2cont[d.fileId] = Cont{
 			dirDirs:    dirDirs,
 			name2id:    name2id,
 			hasUpdated: true,
@@ -127,15 +131,9 @@ func (d Dir) GetDirAll() {
 	}
 }
 
-func (d Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 0 // let it get dynamic id automatic
-	a.Mode = os.ModeDir | 0775
-	return nil
-}
-
 func (d Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	d.GetDirAll()
-	id, ok := bigMap[d.fileId].name2id[name]
+	id, ok := id2cont[d.fileId].name2id[name]
 	if ok {
 		if id[len(id)-1] == '0' {
 			// dir
@@ -151,19 +149,65 @@ func (d Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	return nil, fuse.ENOENT
 }
 
-// var dirDirs = []fuse.Dirent{
-// 	{Inode: 2, Name: "hello", Type: fuse.DT_File},
-// }
-
 func (d Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.GetDirAll()
-	return bigMap[d.fileId].dirDirs, nil
+	return id2cont[d.fileId].dirDirs, nil
+}
+
+func (d Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+	d.GetDirAll()
+	name := req.Name
+	_, ok := id2cont[d.fileId].name2id[name]
+	// check existance
+	if ok {
+		return nil, fuse.EEXIST
+	}
+	// gd
+	newDir, err := handler.MkDirUnder(name, d.fileId)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	// local
+	id2cont[d.fileId].name2id[name] = newDir.Id + "0"
+	tmp := id2cont[d.fileId]
+	tmp.dirDirs = append(tmp.dirDirs, fuse.Dirent{
+		Inode: utils.Str2u64(newDir.Id),
+		Type:  fuse.DT_Dir,
+		Name:  name,
+	})
+	id2cont[d.fileId] = tmp
+	return Dir{
+		fileId: newDir.Id,
+	}, nil
+}
+
+func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
+	d.GetDirAll()
+	name := req.Name
+	id, ok := id2cont[d.fileId].name2id[name]
+	// check existance
+	if !ok {
+		return fuse.ENOENT
+	}
+	// gd
+	handler.DeleteFile(id[:len(id)-1])
+	// local
+	delete(id2cont[d.fileId].name2id, name)
+	tmp := id2cont[d.fileId]
+	for i, dir := range tmp.dirDirs {
+		if dir.Name == name {
+			tmp.dirDirs = append(tmp.dirDirs[:i], tmp.dirDirs[i+1:]...)
+			break
+		}
+	}
+	id2cont[d.fileId] = tmp
+	return nil
 }
 
 // File implements both Node and Handle for the hello file.
 type File struct {
 	fileId string
-	// file   *googledrive.File
 }
 
 //const greeting = "hello, world\n"
@@ -199,3 +243,11 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 	//return []byte(greeting), nil
 	return content, nil
 }
+
+// TODO: write file, create file
+
+// func (f file) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+// 	offset := req.Offset
+// 	fmt.Println(offset)
+
+// }

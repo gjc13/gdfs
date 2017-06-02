@@ -10,6 +10,14 @@ func (handler *DriveHandler) GetRoot() (*drive.File, error) {
 	return handler.srv.Files.Get("root").Fields("id, name").Do()
 }
 
+func (handler *DriveHandler) Touch(filename string, parentDirId string) (*drive.File, error) {
+	fileMeta := &drive.File{
+		Name:    filename,
+		Parents: []string{parentDirId},
+	}
+	return handler.srv.Files.Create(fileMeta).Fields("id, name").Do()
+}
+
 func (handler *DriveHandler) MkDirUnder(dirName string, parentDirId string) (*drive.File, error) {
 	dirMeta := &drive.File{
 		Name:     dirName,

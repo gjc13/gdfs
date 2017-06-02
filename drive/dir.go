@@ -68,6 +68,15 @@ func (handler *DriveHandler) LinkFile(fileId string, toDirId string) error {
 	return err
 }
 
+func (handler *DriveHandler) RmLinkFromDir(fileId string, dirId string) error {
+	file, err := handler.srv.Files.Get(fileId).Fields("name").Do()
+	if err != nil {
+		return err
+	}
+	_, err = handler.srv.Files.Update(fileId, file).RemoveParents(dirId).Do()
+	return err
+}
+
 func (handler *DriveHandler) DeleteFile(fileId string) error {
 	return handler.srv.Files.Delete(fileId).Do()
 }

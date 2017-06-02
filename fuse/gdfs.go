@@ -10,6 +10,8 @@ import (
 	"github.com/gjc13/gdfs/drive"
 	"github.com/gjc13/gdfs/utils"
 
+	"bytes"
+
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	_ "bazil.org/fuse/fs/fstestutil"
@@ -104,13 +106,13 @@ type Dir struct {
 }
 
 func (d Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 0 // let it get dynamic id automatic
+	a.Inode = utils.Str2u64(d.fileId) // let it get dynamic id automatic
 	a.Mode = os.ModeDir | 0775
 	return nil
 }
 
 func (d Dir) GetDirAll() {
-	fmt.Println("GetDirAll")
+	//fmt.Println("GetDirAll")
 	_, ok := id2container[d.fileId]
 	if !ok || !id2container[d.fileId].hasUpdated {
 		files, err := handler.List(d.fileId)
@@ -145,7 +147,7 @@ func (d Dir) GetDirAll() {
 }
 
 func (d Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	fmt.Println("Lookup")
+	fmt.Println("Lookup " + name)
 	d.GetDirAll()
 	id, ok := id2container[d.fileId].name2id[name]
 	if ok {
@@ -170,7 +172,7 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 }
 
 func (d Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	fmt.Println("Mkdir")
+	fmt.Println("Mkdir " + req.Name)
 	d.GetDirAll()
 	name := req.Name
 	_, ok := id2container[d.fileId].name2id[name]
@@ -200,7 +202,7 @@ func (d Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error)
 }
 
 func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	fmt.Println("Remove")
+	fmt.Println("Remove " + req.Name)
 	d.GetDirAll()
 	name := req.Name
 	id, ok := id2container[d.fileId].name2id[name]
@@ -244,7 +246,7 @@ func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 // }
 
 func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Node) error {
-	fmt.Println("Rename")
+	fmt.Println("Rename ")
 	newDir, ok := _newDir.(Dir)
 	d.GetDirAll()
 	// check existance
@@ -288,10 +290,10 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 }
 
 func (d Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	fmt.Println("Create " + req.Name)
 	if req.Name[0] == '.' {
 		return nil, nil, fuse.ENOENT
 	}
-	fmt.Println("Create")
 	d.GetDirAll()
 	_, ok := id2container[d.fileId].name2id[req.Name]
 	if ok {
@@ -329,13 +331,13 @@ type File struct {
 //const greeting = "hello, wordld\n"
 
 func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
-	fmt.Println("Attr")
+	fmt.Println("Attr " + f.fileId)
 	file, err := handler.GetFile(f.fileId)
 	if err != nil {
 		log.Fatal(err)
 		return err
 	}
-	a.Inode = 0 // let it get dynamic id automatic, WARNING
+	a.Inode = utils.Str2u64(f.fileId) // let it get dynamic id automatic, WARNING
 	a.Mode = 0775
 	a.Size = uint64(file.Size)
 	fmt.Println(file.Size)
@@ -344,7 +346,7 @@ func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
 }
 
 func (f File) ReadAll(ctx context.Context) ([]byte, error) {
-	fmt.Println("ReadAll")
+	fmt.Println("ReadAll " + f.fileId)
 	content, ok := id2content[f.fileId]
 	if ok {
 		return content, nil
@@ -368,7 +370,7 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 // TODO: for file write
 
 func (f File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	fmt.Println("Write")
+	fmt.Println("Write " + f.fileId)
 	fmt.Println("Offset")
 	fmt.Println(req.Offset)
 	fmt.Println("Data")
@@ -380,7 +382,7 @@ func (f File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Writ
 	}
 	resp.Size = copy(content[req.Offset:], req.Data)
 	// gd
-
+	handler.UpdateFile(f.fileId, bytes.NewReader(content))
 	// local
 	id2content[f.fileId] = content
 	return nil

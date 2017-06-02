@@ -72,3 +72,7 @@ func (handler *DriveHandler) RenameFile(fileId string, newName string) (*drive.F
 	file.Name = newName
 	return handler.srv.Files.Update(fileId, file).Fields("id, name").Do()
 }
+
+func (handler *DriveHandler) GetFile(fileId string) (*drive.File, error) {
+	return handler.srv.Files.Get(fileId).Fields("id, name,  mimeType, parents, size").Do()
+}

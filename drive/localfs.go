@@ -16,6 +16,14 @@ func isMimeGoogleDoc(mime string) bool {
 		mime == "application/vnd.google-apps.spreadsheet"
 }
 
+func (handler *DriveHandler) UpdateFile(fileId string, r io.Reader) (*drive.File, error) {
+	file, err := handler.srv.Files.Get(fileId).Fields("name").Do()
+	if err != nil {
+		return nil, err
+	}
+	return handler.srv.Files.Update(fileId, file).Media(r).Fields("id, name").Do()
+}
+
 func (handler *DriveHandler) WriteToDir(filename string, r io.Reader, parentDirId string) (*drive.File, error) {
 	fileMeta := &drive.File{
 		Name:    filename,

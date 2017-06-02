@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	drive "google.golang.org/api/drive/v3"
+	"log"
 )
 
 func (handler *DriveHandler) GetRoot() (*drive.File, error) {
@@ -26,9 +27,17 @@ func (handler *DriveHandler) List(fileId string) ([]*drive.File, error) {
 		r, err := handler.srv.Files.List().
 			Q(fmt.Sprintf("'%s' in parents", fileId)).PageToken(pageToken).
 			PageSize(20).Fields("nextPageToken, files(id, name, mimeType)").Do()
+		if err != nil {
+			log.Fatal(err)
+			return nil, err
+		}
+		for _, f := range r.Files {
+			fmt.Println(f.Id)
+		}
 		pageToken = r.NextPageToken
 		files = append(files, r.Files...)
 		if err != nil {
+			log.Fatal(err)
 			return nil, err
 		}
 		if len(pageToken) == 0 {

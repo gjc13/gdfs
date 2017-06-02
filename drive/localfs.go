@@ -6,11 +6,11 @@ import (
 	drive "google.golang.org/api/drive/v3"
 )
 
-func isMimeDir(mime string) bool {
+func IsMimeDir(mime string) bool {
 	return mime == "application/vnd.google-apps.folder"
 }
 
-func isMimeGoogleDoc(mime string) bool {
+func IsMimeGoogleDoc(mime string) bool {
 	return mime == "application/vnd.google-apps.document" ||
 		mime == "application/vnd.google-apps.presentation" ||
 		mime == "application/vnd.google-apps.spreadsheet"
@@ -30,10 +30,10 @@ func (handler *DriveHandler) OpenReader(fileId string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	if isMimeDir(file.MimeType) {
+	if IsMimeDir(file.MimeType) {
 		return nil, ERR_READDIR
 	}
-	if isMimeGoogleDoc(file.MimeType) {
+	if IsMimeGoogleDoc(file.MimeType) {
 		resp, err := handler.srv.Files.Export(fileId, "application/pdf").Download()
 		if err != nil {
 			return nil, err

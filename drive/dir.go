@@ -11,6 +11,14 @@ func (handler *DriveHandler) GetRoot() (*drive.File, error) {
 	return handler.srv.Files.Get("root").Fields("id, name").Do()
 }
 
+func (handler *DriveHandler) Touch(filename string, parentDirId string) (*drive.File, error) {
+	fileMeta := &drive.File{
+		Name:    filename,
+		Parents: []string{parentDirId},
+	}
+	return handler.srv.Files.Create(fileMeta).Fields("id, name").Do()
+}
+
 func (handler *DriveHandler) MkDirUnder(dirName string, parentDirId string) (*drive.File, error) {
 	dirMeta := &drive.File{
 		Name:     dirName,
@@ -66,6 +74,15 @@ func (handler *DriveHandler) LinkFile(fileId string, toDirId string) error {
 		return err
 	}
 	_, err = handler.srv.Files.Update(fileId, file).AddParents(toDirId).Do()
+	return err
+}
+
+func (handler *DriveHandler) RmLinkFromDir(fileId string, dirId string) error {
+	file, err := handler.srv.Files.Get(fileId).Fields("name").Do()
+	if err != nil {
+		return err
+	}
+	_, err = handler.srv.Files.Update(fileId, file).RemoveParents(dirId).Do()
 	return err
 }
 

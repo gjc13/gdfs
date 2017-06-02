@@ -369,20 +369,19 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 
 func (f File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 	fmt.Println("Write")
+	fmt.Println("Offset")
+	fmt.Println(req.Offset)
+	fmt.Println("Data")
+	fmt.Println(req.Data)
 	content, _ := id2content[f.fileId]
 	newLen := req.Offset + int64(len(req.Data))
 	if newLen := int(newLen); newLen > len(content) {
 		content = append(content, make([]byte, newLen-len(content))...)
 	}
 	resp.Size = copy(content[req.Offset:], req.Data)
-	fmt.Println("Offset")
-	fmt.Println(req.Offset)
-	fmt.Println("Data")
-	fmt.Println(req.Data)
 	// gd
-	// err := handler.DeleteFile(f.fileId)
-	// id, err = handler.WriteToDir(id2name[f.fileId], bytes.NewReader(content), id2parentdir[f.fileId])
-	// local
 
+	// local
+	id2content[f.fileId] = content
 	return nil
 }

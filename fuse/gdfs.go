@@ -36,6 +36,7 @@ var id2container map[string]DirCont // fileId->dir container
 var id2parentdir map[string]string  // fileId->parentdir
 var id2content map[string][]byte    // fileId->content
 var id2name map[string]string
+var id2size map[string]uint64
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -60,6 +61,7 @@ func main() {
 	id2parentdir = make(map[string]string)
 	id2content = make(map[string][]byte)
 	id2name = make(map[string]string)
+	id2size = make(map[string]uint64)
 
 	// connect gdfs
 	utils.SetupProxyFromEnv()
@@ -111,6 +113,14 @@ func (d Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 	return nil
 }
 
+func (d Dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	return nil
+}
+
+func (d Dir) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	return nil
+}
+
 func (d Dir) GetDirAll() {
 	//fmt.Println("GetDirAll")
 	_, ok := id2container[d.fileId]
@@ -137,6 +147,7 @@ func (d Dir) GetDirAll() {
 			})
 			id2parentdir[file.Id] = d.fileId
 			id2name[file.Id] = file.Name
+			id2size[file.Id] = uint64(file.Size)
 		}
 		id2container[d.fileId] = DirCont{
 			dirDirs:    dirDirs,
@@ -220,6 +231,7 @@ func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 			tmp.dirDirs = append(tmp.dirDirs[:i], tmp.dirDirs[i+1:]...)
 			delete(id2parentdir, id[:len(id)-1])
 			delete(id2name, id[:len(id)-1])
+			delete(id2size, id[:len(id)-1])
 			break
 		}
 	}
@@ -259,12 +271,14 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 		return fuse.ENOENT
 	}
 	// gd
-	err := handler.MoveFile(id[:len(id)-1], d.fileId, newDir.fileId)
-	if err != nil {
-		log.Fatal(err)
+	if d.fileId != newDir.fileId {
+		err := handler.MoveFile(id[:len(id)-1], d.fileId, newDir.fileId)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	if req.OldName != req.NewName {
-		handler.RenameFile(id, req.NewName)
+		handler.RenameFile(id[:len(id)-1], req.NewName)
 	}
 	// local
 	// oldDir
@@ -291,9 +305,9 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 
 func (d Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	fmt.Println("Create " + req.Name)
-	if req.Name[0] == '.' {
-		return nil, nil, fuse.ENOENT
-	}
+	//if req.Name[0] == '.' {
+	//	return nil, nil, fuse.ENOENT
+	//}
 	d.GetDirAll()
 	_, ok := id2container[d.fileId].name2id[req.Name]
 	if ok {
@@ -302,6 +316,7 @@ func (d Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cre
 	// gd
 	gf, err := handler.Touch(req.Name, d.fileId)
 	if err != nil {
+		log.Println("wrong")
 		log.Fatal(err)
 		return nil, nil, err
 	}
@@ -320,6 +335,7 @@ func (d Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cre
 	}
 	id2parentdir[id] = d.fileId
 	id2name[id] = req.Name
+	id2size[id] = 0
 	return f, f, nil
 }
 
@@ -332,16 +348,24 @@ type File struct {
 
 func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
 	fmt.Println("Attr " + f.fileId)
-	file, err := handler.GetFile(f.fileId)
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
+	//file, err := handler.GetFile(f.fileId)
+	//if err != nil {
+	//	log.Fatal(err)
+	//	return err
+	//}
 	a.Inode = utils.Str2u64(f.fileId) // let it get dynamic id automatic, WARNING
 	a.Mode = 0775
-	a.Size = uint64(file.Size)
-	fmt.Println(file.Size)
+	a.Size = uint64(id2size[f.fileId])
+	//fmt.Println(file.Size)
 	//a.Size = uint64(len(greeting))
+	return nil
+}
+
+func (f File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	return nil
+}
+
+func (f File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	return nil
 }
 
@@ -385,5 +409,6 @@ func (f File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Writ
 	handler.UpdateFile(f.fileId, bytes.NewReader(content))
 	// local
 	id2content[f.fileId] = content
+	id2size[f.fileId] = uint64(len(content))
 	return nil
 }

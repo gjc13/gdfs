@@ -34,7 +34,7 @@ func (handler *DriveHandler) List(fileId string) ([]*drive.File, error) {
 	for {
 		r, err := handler.srv.Files.List().
 			Q(fmt.Sprintf("'%s' in parents", fileId)).PageToken(pageToken).
-			PageSize(20).Fields("nextPageToken, files(id, name, mimeType)").Do()
+			PageSize(20).Fields("nextPageToken, files(id, name, mimeType, size)").Do()
 		if err != nil {
 			log.Fatal(err)
 			return nil, err

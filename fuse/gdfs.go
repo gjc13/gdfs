@@ -62,6 +62,7 @@ func main() {
 	id2content = make(map[string][]byte)
 	id2name = make(map[string]string)
 	id2size = make(map[string]uint64)
+	id2name["root"] = "root"
 
 	// connect gdfs
 	utils.SetupProxyFromEnv()
@@ -108,6 +109,7 @@ type Dir struct {
 }
 
 func (d Dir) Attr(ctx context.Context, a *fuse.Attr) error {
+
 	a.Inode = utils.Str2u64(d.fileId) // let it get dynamic id automatic
 	a.Mode = os.ModeDir | 0775
 	return nil
@@ -258,7 +260,7 @@ func (d Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 // }
 
 func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Node) error {
-	fmt.Println("Rename ")
+	fmt.Println("Rename " + req.NewName + " to " + req.OldName)
 	newDir, ok := _newDir.(Dir)
 	d.GetDirAll()
 	// check existance
@@ -296,6 +298,7 @@ func (d Dir) Rename(ctx context.Context, req *fuse.RenameRequest, _newDir fs.Nod
 	// newDir
 	id2container[newDir.fileId].name2id[req.NewName] = id
 	tmp = id2container[newDir.fileId]
+	dirent.Name = req.NewName
 	tmp.dirDirs = append(tmp.dirDirs, dirent)
 	id2container[newDir.fileId] = tmp
 	id2parentdir[id[:len(id)-1]] = newDir.fileId
@@ -347,17 +350,10 @@ type File struct {
 //const greeting = "hello, wordld\n"
 
 func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
-	fmt.Println("Attr " + f.fileId)
-	//file, err := handler.GetFile(f.fileId)
-	//if err != nil {
-	//	log.Fatal(err)
-	//	return err
-	//}
+	fmt.Println("Attr " + id2name[f.fileId])
 	a.Inode = utils.Str2u64(f.fileId) // let it get dynamic id automatic, WARNING
 	a.Mode = 0775
 	a.Size = uint64(id2size[f.fileId])
-	//fmt.Println(file.Size)
-	//a.Size = uint64(len(greeting))
 	return nil
 }
 
@@ -387,7 +383,6 @@ func (f File) ReadAll(ctx context.Context) ([]byte, error) {
 	}
 	fmt.Println(len(content))
 	id2content[f.fileId] = content
-	//return []byte(greeting), nil
 	return content, nil
 }
 

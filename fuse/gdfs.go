@@ -37,6 +37,7 @@ var id2parentdir map[string]string  // fileId->parentdir
 var id2content map[string][]byte    // fileId->content
 var id2name map[string]string
 var id2size map[string]uint64
+var id2gdoc map[string]bool
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -62,6 +63,7 @@ func main() {
 	id2content = make(map[string][]byte)
 	id2name = make(map[string]string)
 	id2size = make(map[string]uint64)
+	id2gdoc = make(map[string]bool)
 	id2name["root"] = "root"
 
 	// connect gdfs
@@ -140,6 +142,10 @@ func (d Dir) GetDirAll() {
 				name2id[file.Name] = file.Id + "0"
 			} else {
 				ftype = fuse.DT_File
+				id2gdoc[file.Id] = drive.IsMimeGoogleDoc(file.MimeType)
+				if id2gdoc[file.Id] {
+					file.Name = file.Name + ".pdf"
+				}
 				name2id[file.Name] = file.Id + "1"
 			}
 			dirDirs = append(dirDirs, fuse.Dirent{
@@ -353,7 +359,22 @@ func (f File) Attr(ctx context.Context, a *fuse.Attr) error {
 	fmt.Println("Attr " + id2name[f.fileId])
 	a.Inode = utils.Str2u64(f.fileId) // let it get dynamic id automatic, WARNING
 	a.Mode = 0775
-	a.Size = uint64(id2size[f.fileId])
+	// for google doc
+	if id2gdoc[f.fileId] && id2size[f.fileId] == 0 {
+		fmt.Println("ReadAll Google Doc" + f.fileId)
+		r, err := handler.OpenReader(f.fileId)
+		if err != nil {
+			log.Fatal(err)
+		}
+		content, err := ioutil.ReadAll(r)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(len(content))
+		id2content[f.fileId] = content
+		id2size[f.fileId] = uint64(len(content))
+	}
+	a.Size = id2size[f.fileId]
 	return nil
 }
 
